@@ -1,0 +1,77 @@
+import pandas as pd
+import math
+
+def vix_and_skew(calc_df, t , r=0.03):
+    
+#    calc_df = pd.DataFrame(index = strike_bench,columns = ['call price','put price'])
+    
+    calc_df['strike'] = calc_df.index
+    calc_df[calc_df==0] = np.NaN
+    calc_df['c_p diff'] = calc_df['call price'] -calc_df['put price']
+    calc_df['abs diff'] = calc_df['c_p diff'].abs()
+    
+    strike_price = calc_df['abs diff'].astype(float64).idxmin()
+    F = strike_price + math.exp(r * t) * calc_df.loc[strike_price,'c_p diff']
+    K = calc_df[calc_df.index<=F].index[-1]
+    
+    calc_df.loc[K:,'mid quote'] = calc_df[calc_df.index>F]['call price']
+    calc_df.loc[:K,'mid quote'] = calc_df[calc_df.index<F]['put price']
+    calc_df.loc[K,'mid quote'] = (calc_df.loc[K,'call price']+calc_df.loc[K,'put price']) / 2
+    
+    calc_df['delta_k'] = np.NaN
+    for j in range(1,len(calc_df.index)-1):
+        calc_df.loc[calc_df.index[j],'delta_k'] = (calc_df.index[j+1] - calc_df.index[j-1]) / 2
+    calc_df.iloc[0]['delta_k'] = calc_df.index[1] - calc_df.index[0]
+    calc_df.iloc[-1]['delta_k'] = calc_df.index[-1] - calc_df.index[-2]
+    
+    calc_df['vix cbs'] = calc_df['mid quote'] * calc_df['delta_k'] / calc_df.index ** 2 * math.exp(r * t)
+            
+    vix_adjust_item = (F / K - 1) ** 2 / t
+    
+    vix = (calc_df['vix cbs'].sum() * 2 / t - vix_adjust_item) ** (1/2) * 100
+    
+    
+    p_d_k = calc_df['mid quote'] * calc_df['delta_k'] / calc_df.index ** 2
+    ln_k_f = calc_df.apply(lambda x : math.log(x['strike'] / F),axis=1)
+    
+    calc_df['skew p1'] = math.exp(r * t) * (- p_d_k) 
+    calc_df['skew p2'] = math.exp(r * t) * (2 * (1 - ln_k_f) * p_d_k)
+    calc_df['skew p3'] = math.exp(r * t) * (3 * (2 * ln_k_f - ln_k_f ** 2) * p_d_k)
+    
+    skew_adjust_item_1 = - (1 + math.log(F /K) - F / K)
+    skew_adjust_item_2 = 2 * math.log(K / F) * (F / K - 1) + math.log(K / F) ** 2 / 2
+    skew_adjust_item_3 = 3 * math.log(K / F) ** 2 * (math.log(K / F) / 3 - 1 + F / K)
+    
+    p1 = calc_df['skew p1'].sum() + skew_adjust_item_1 
+    p2 = calc_df['skew p2'].sum() + skew_adjust_item_2
+    p3 = calc_df['skew p3'].sum() + skew_adjust_item_3
+    
+    skew = 100 - ((p3 - 3 * p1 * p2 + 2 * p1 ** 3) / (p2 - p1 ** 2) ** (3/2))*10
+    
+    return vix, skew
+    
+calc_df = pd.DataFrame(index = range(41000,57000,1000), columns=['call price','put price'])
+calc_df.loc[46000,'call price'] = 3792
+calc_df.loc[47000,'call price'] = 3072
+calc_df.loc[48000,'call price'] = 2432
+calc_df.loc[49000,'call price'] = 1887
+calc_df.loc[50000,'call price'] = 1440
+calc_df.loc[51000,'call price'] = 1082
+calc_df.loc[52000,'call price'] = 809
+
+calc_df.loc[46000,'put price'] = 564
+calc_df.loc[47000,'put price'] = 832
+calc_df.loc[48000,'put price'] = 1185
+calc_df.loc[49000,'put price'] = 1640
+calc_df.loc[50000,'put price'] = 2187
+calc_df.loc[51000,'put price'] = 2814
+calc_df.loc[52000,'put price'] = 3532
+
+calc_df
+
+
+
+vix, skew = vix_and_skew(calc_df, t=0.1 , r=0.03)
+
+print('vix: '+str(vix))
+print('skew: '+str(skew))
